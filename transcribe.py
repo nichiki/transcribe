@@ -1,51 +1,15 @@
 #!/usr/bin/env python3
-import os
+"""
+Audio transcription tool using Gemini API
+"""
 import sys
 import argparse
 import fnmatch
 from pathlib import Path
 from typing import List, Optional, Tuple
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-
-load_dotenv()
+from common import load_prompt, initialize_gemini_client, save_output
 
 AUDIO_EXTENSIONS = ['.mp3', '.wav', '.aiff', '.aac', '.ogg', '.flac']
-DEFAULT_PROMPT_FILE = "default_prompt.txt"
-
-def load_prompt(prompt_path: Optional[str] = None) -> str:
-    """
-    Load prompt from a file or use the default prompt.
-    
-    Args:
-        prompt_path: Optional path to a custom prompt file
-    
-    Returns:
-        The prompt text
-    """
-    if prompt_path:
-        prompt_file = Path(prompt_path)
-        if not prompt_file.exists():
-            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-        print(f"Using custom prompt from: {prompt_path}")
-        return prompt_file.read_text(encoding='utf-8')
-    
-    # Try to load default prompt file
-    default_file = Path(__file__).parent / DEFAULT_PROMPT_FILE
-    if default_file.exists():
-        print(f"Using default prompt from: {DEFAULT_PROMPT_FILE}")
-        return default_file.read_text(encoding='utf-8')
-    
-    # Fallback to hardcoded prompt if default file doesn't exist
-    print("Using built-in prompt (consider creating default_prompt.txt for customization)")
-    return """
-この音声ファイルの書き起こしをしてください。書き起こすにあたり、以下のルールを守ってください。
-
-・言葉のヒゲや言い間違い等は除去すること
-・日本語の文法としておかしい部分は読みやすく修正すること
-・上記を守ったうえで、内容についてはできるだけ忠実に書き起こすこと
-"""
 
 def collect_audio_files(path: Path, recursive: bool = False, pattern: str = None) -> List[Path]:
     """
@@ -73,13 +37,14 @@ def collect_audio_files(path: Path, recursive: bool = False, pattern: str = None
     
     return sorted(audio_files)
 
-def transcribe_audio(audio_path: str, output_path: str = None, prompt_text: str = None):
+def transcribe_audio(audio_path: str, output_path: str = None, prompt_path: str = None):
     """
     Transcribe an audio file using the Gemini API.
     
     Args:
         audio_path: Path to the audio file (MP3, WAV, etc.)
         output_path: Optional path for the output transcript file
+        prompt_path: Optional path to a custom prompt file
     """
     audio_path = Path(audio_path)
     
@@ -98,16 +63,11 @@ def transcribe_audio(audio_path: str, output_path: str = None, prompt_text: str 
         print("   Attempting to process anyway...")
     
     if output_path is None:
-        output_path = audio_path.parent / f"{audio_path.stem}_transcript.txt"
+        output_path = audio_path.parent / f"{audio_path.stem}_transcript.md"
     else:
         output_path = Path(output_path)
     
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key or api_key == "your-api-key-here":
-        raise ValueError("Please set your GEMINI_API_KEY in the .env file")
-    
-    print(f"Initializing Gemini client...")
-    client = genai.Client(api_key=api_key)
+    client = initialize_gemini_client()
     
     print(f"Uploading audio file: {audio_path.name}...")
     try:
@@ -117,9 +77,10 @@ def transcribe_audio(audio_path: str, output_path: str = None, prompt_text: str 
         raise Exception(f"Failed to upload audio file: {str(e)}")
     
     print("Generating transcript...")
-    prompt = prompt_text if prompt_text else load_prompt()
+    prompt = load_prompt(prompt_type='transcribe', custom_path=prompt_path)
     
     try:
+        from google.genai import types
         response = client.models.generate_content(
             model='gemini-2.5-pro',
             contents=[prompt, audio_file],
@@ -135,17 +96,9 @@ def transcribe_audio(audio_path: str, output_path: str = None, prompt_text: str 
             raise Exception("Gemini API returned empty response. The audio file might be too long or unsupported.")
         
         transcript = response.text
-        
-        print(f"Saving transcript to: {output_path}")
-        output_path.write_text(transcript, encoding='utf-8')
+        save_output(transcript, output_path)
         
         print(f"✓ Transcription completed successfully!")
-        print(f"✓ Output saved to: {output_path}")
-        
-        print(f"\nTranscript preview (first 500 characters):")
-        print("-" * 50)
-        print(transcript[:500] + ("..." if len(transcript) > 500 else ""))
-        print("-" * 50)
         
     except Exception as e:
         raise Exception(f"Failed to generate transcript: {str(e)}")
@@ -156,13 +109,14 @@ def transcribe_audio(audio_path: str, output_path: str = None, prompt_text: str 
         except Exception:
             pass
 
-def process_multiple_files(audio_files: List[Path], output_dir: Optional[Path] = None, prompt_text: str = None) -> Tuple[int, int]:
+def process_multiple_files(audio_files: List[Path], output_dir: Optional[Path] = None, prompt_path: str = None) -> Tuple[int, int]:
     """
     Process multiple audio files.
     
     Args:
         audio_files: List of audio file paths
         output_dir: Optional directory to save all transcripts
+        prompt_path: Optional custom prompt path
     
     Returns:
         Tuple of (successful_count, failed_count)
@@ -181,11 +135,11 @@ def process_multiple_files(audio_files: List[Path], output_dir: Optional[Path] =
         
         try:
             if output_dir:
-                output_path = output_dir / f"{audio_file.stem}_transcript.txt"
+                output_path = output_dir / f"{audio_file.stem}_transcript.md"
             else:
                 output_path = None
             
-            transcribe_audio(str(audio_file), str(output_path) if output_path else None, prompt_text)
+            transcribe_audio(str(audio_file), str(output_path) if output_path else None, prompt_path)
             successful += 1
         except Exception as e:
             print(f"✗ Failed to process {audio_file.name}: {str(e)}")
@@ -251,7 +205,7 @@ Examples:
     
     parser.add_argument(
         "--prompt",
-        help="Path to a custom prompt file (default: use default_prompt.txt or built-in prompt)",
+        help="Path to a custom prompt file (default: use prompts/transcribe.txt)",
         default=None
     )
     
@@ -264,13 +218,10 @@ Examples:
         sys.exit(1)
     
     try:
-        # Load prompt once at the beginning
-        prompt_text = load_prompt(args.prompt)
-        
         if input_path.is_file():
             if args.output_dir:
                 print("Warning: --output-dir is ignored when processing a single file")
-            transcribe_audio(str(input_path), args.output, prompt_text)
+            transcribe_audio(str(input_path), args.output, args.prompt)
         elif input_path.is_dir():
             if args.output:
                 print("Warning: --output is ignored when processing a directory")
@@ -290,7 +241,7 @@ Examples:
                     print(f"Pattern used: {args.pattern}")
                 sys.exit(0)
             
-            successful, failed = process_multiple_files(audio_files, output_dir, prompt_text)
+            successful, failed = process_multiple_files(audio_files, output_dir, args.prompt)
             
             if failed > 0:
                 sys.exit(1)
