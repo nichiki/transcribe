@@ -14,6 +14,7 @@ Gemini APIを使用して音声ファイルの書き起こしとテキスト処�
 - テキストファイル（.txt、.md）の詳細な要約（元文章の40-60%の長さ）
 - 見出し付けによる構造化（元文章は改変せず見出しのみ追加）
 - カスタムプロンプトによる柔軟な処理
+- 表記ルール（YAML形式）の適用による文章校正
 - ディレクトリ内の複数ファイル一括処理
 
 ## セットアップ
@@ -76,6 +77,12 @@ python process_text.py report.md --task headline
 # カスタムプロンプトで処理
 python process_text.py data.txt --task custom --prompt analysis_prompt.txt
 
+# 表記ルール（デフォルト: rules/writing-rules.yaml）を適用して要約
+python process_text.py document.txt --task summarize --rules
+
+# カスタム表記ルールファイルを指定
+python process_text.py document.txt --task summarize --rules my_rules.yaml
+
 # ディレクトリ内のすべてのテキストファイルを要約
 python process_text.py ./documents/ --task summarize --recursive
 
@@ -95,10 +102,12 @@ transcribe/
 ├── common.py          # 共通処理モジュール
 ├── requirements.txt   # 依存パッケージ
 ├── .env              # APIキー設定（要作成）
-└── prompts/          # デフォルトプロンプト
-    ├── transcribe.txt # 書き起こし用プロンプト
-    ├── summarize.txt  # 要約用プロンプト
-    └── headline.txt   # 見出し付け用プロンプト
+├── prompts/          # デフォルトプロンプト
+│   ├── transcribe.txt # 書き起こし用プロンプト
+│   ├── summarize.txt  # 要約用プロンプト
+│   └── headline.txt   # 見出し付け用プロンプト
+└── rules/            # 表記ルール
+    └── writing-rules.yaml # デフォルト表記ルール
 ```
 
 ## 出力ファイル
@@ -128,6 +137,28 @@ python transcribe.py audio.mp3 --prompt custom_transcribe.txt
 python process_text.py doc.txt --task custom --prompt my_analysis.txt
 ```
 
+### 表記ルールの適用
+表記ルール（YAML形式）を使用して、文章の表記を統一できます：
+
+```bash
+# デフォルトの表記ルール（rules/writing-rules.yaml）を適用
+python process_text.py document.txt --task summarize --rules
+
+# カスタム表記ルールファイルを指定
+python process_text.py document.txt --task summarize --rules custom_rules.yaml
+
+# 表記ルールとカスタムプロンプトを併用
+python process_text.py doc.txt --task custom --prompt my_prompt.txt --rules
+```
+
+表記ルールファイルはYAML形式で、以下のような構造で定義します：
+- `判定`: 自動チェック/要文脈判断
+- `正解`: 正しい表記
+- `NG例`: 避けるべき表記
+- `条件`: 適用条件
+- `文章例`: 使用例
+- `備考`: 補足情報
+
 ## 処理可能なファイル形式
 
 ### 音声ファイル
@@ -154,6 +185,12 @@ python process_text.py doc.txt --task custom --prompt my_analysis.txt
 - 元の文章は一切改変せず、見出しのみを追加
 - 階層的な見出し（#、##、###）で構造化
 - 内容の論理的な流れに基づいて見出しを配置
+
+### 表記ルール適用
+- YAML形式の表記ルールファイルに基づいて文章を校正
+- 文脈を考慮した表記の統一（例：「言う」vs「いう」）
+- 口語表現の書き言葉への変換
+- 数字表記の統一
 
 ## 制限事項
 

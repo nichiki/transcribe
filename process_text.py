@@ -39,7 +39,7 @@ def collect_text_files(path: Path, recursive: bool = False, pattern: str = None)
     
     return sorted(text_files)
 
-def process_text_file(text_path: str, output_path: str = None, task: str = 'summarize', prompt_path: str = None):
+def process_text_file(text_path: str, output_path: str = None, task: str = 'summarize', prompt_path: str = None, rules_path: str = None):
     """
     Process a text file using the Gemini API.
     
@@ -48,6 +48,7 @@ def process_text_file(text_path: str, output_path: str = None, task: str = 'summ
         output_path: Optional path for the output file
         task: Task type ('summarize', 'headline', or 'custom')
         prompt_path: Optional path to a custom prompt file
+        rules_path: Optional path to a rules YAML file
     """
     text_path = Path(text_path)
     
@@ -75,9 +76,9 @@ def process_text_file(text_path: str, output_path: str = None, task: str = 'summ
         raise ValueError("Custom task requires a prompt file (--prompt)")
     
     if prompt_path:
-        prompt = load_prompt(custom_path=prompt_path)
+        prompt = load_prompt(custom_path=prompt_path, rules_path=rules_path)
     else:
-        prompt = load_prompt(prompt_type=task)
+        prompt = load_prompt(prompt_type=task, rules_path=rules_path)
     
     # Read the input text
     print(f"Reading text file: {text_path.name}...")
@@ -96,7 +97,7 @@ def process_text_file(text_path: str, output_path: str = None, task: str = 'summ
     except Exception as e:
         raise Exception(f"Failed to process text: {str(e)}")
 
-def process_multiple_files(text_files: List[Path], output_dir: Optional[Path], task: str, prompt_path: str = None) -> Tuple[int, int]:
+def process_multiple_files(text_files: List[Path], output_dir: Optional[Path], task: str, prompt_path: str = None, rules_path: str = None) -> Tuple[int, int]:
     """
     Process multiple text files.
     
@@ -105,6 +106,7 @@ def process_multiple_files(text_files: List[Path], output_dir: Optional[Path], t
         output_dir: Optional directory to save all outputs
         task: Task type
         prompt_path: Optional custom prompt path
+        rules_path: Optional rules YAML file path
     
     Returns:
         Tuple of (successful_count, failed_count)
@@ -133,7 +135,8 @@ def process_multiple_files(text_files: List[Path], output_dir: Optional[Path], t
                 str(text_file), 
                 str(output_path) if output_path else None,
                 task,
-                prompt_path
+                prompt_path,
+                rules_path
             )
             successful += 1
         except Exception as e:
@@ -167,6 +170,9 @@ Examples:
   
   # Process with custom prompt
   %(prog)s report.txt --prompt my_analysis_prompt.txt
+  
+  # Process with writing rules
+  %(prog)s document.txt --task summarize --rules rules/writing-rules.yaml
   
   # Process all text files in a directory
   %(prog)s /path/to/texts/ --task summarize --recursive
@@ -222,6 +228,14 @@ Examples:
         default=None
     )
     
+    parser.add_argument(
+        "--rules",
+        nargs='?',
+        const="rules/writing-rules.yaml",
+        help="Path to a YAML file containing writing rules (default: rules/writing-rules.yaml if flag is used without path)",
+        default=None
+    )
+    
     args = parser.parse_args()
     
     input_path = Path(args.input_path)
@@ -234,7 +248,7 @@ Examples:
         if input_path.is_file():
             if args.output_dir:
                 print("Warning: --output-dir is ignored when processing a single file")
-            process_text_file(str(input_path), args.output, args.task, args.prompt)
+            process_text_file(str(input_path), args.output, args.task, args.prompt, args.rules)
         elif input_path.is_dir():
             if args.output:
                 print("Warning: --output is ignored when processing a directory")
@@ -255,7 +269,7 @@ Examples:
                     print(f"Pattern used: {args.pattern}")
                 sys.exit(0)
             
-            successful, failed = process_multiple_files(text_files, output_dir, args.task, args.prompt)
+            successful, failed = process_multiple_files(text_files, output_dir, args.task, args.prompt, args.rules)
             
             if failed > 0:
                 sys.exit(1)

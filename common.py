@@ -3,41 +3,108 @@
 Common utilities for Gemini API processing
 """
 import os
+import yaml
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
 load_dotenv()
 
-def load_prompt(prompt_type: str = None, custom_path: Optional[str] = None) -> str:
+def load_rules(rules_path: Optional[str] = None) -> Optional[str]:
     """
-    Load prompt from a file.
+    Load writing rules from a YAML file and format them for prompt inclusion.
+    
+    Args:
+        rules_path: Optional path to a rules YAML file
+    
+    Returns:
+        Formatted rules text or None if no rules file specified
+    """
+    if not rules_path:
+        return None
+    
+    rules_file = Path(rules_path)
+    if not rules_file.exists():
+        raise FileNotFoundError(f"Rules file not found: {rules_path}")
+    
+    print(f"Loading writing rules from: {rules_path}")
+    
+    with open(rules_file, 'r', encoding='utf-8') as f:
+        rules_data = yaml.safe_load(f)
+    
+    if not rules_data:
+        return None
+    
+    # Format rules for prompt
+    rules_text = "\n=== 表記ルール ===\n"
+    rules_text += "以下の表記ルールに従って処理してください:\n\n"
+    
+    for rule in rules_data:
+        rule_id = rule.get('id', '')
+        judgement = rule.get('判定', '')
+        correct = rule.get('正解', '')
+        ng = rule.get('NG例', '')
+        condition = rule.get('条件', '')
+        example = rule.get('文章例', '')
+        note = rule.get('備考', '')
+        
+        rules_text += f"【ルール {rule_id}】\n"
+        if judgement:
+            rules_text += f"  判定: {judgement}\n"
+        if correct:
+            rules_text += f"  正しい表記: {correct}\n"
+        if ng:
+            rules_text += f"  誤った表記: {ng}\n"
+        if condition:
+            rules_text += f"  条件: {condition}\n"
+        if example:
+            rules_text += f"  例: {example}\n"
+        if note:
+            rules_text += f"  備考: {note}\n"
+        rules_text += "\n"
+    
+    rules_text += "=== 表記ルール終了 ===\n\n"
+    return rules_text
+
+def load_prompt(prompt_type: str = None, custom_path: Optional[str] = None, rules_path: Optional[str] = None) -> str:
+    """
+    Load prompt from a file, optionally with writing rules.
     
     Args:
         prompt_type: Type of prompt ('transcribe', 'summarize', 'headline')
         custom_path: Optional path to a custom prompt file
+        rules_path: Optional path to a rules YAML file
     
     Returns:
-        The prompt text
+        The prompt text, potentially with rules prepended
     """
+    # Load base prompt
+    base_prompt = ""
     if custom_path:
         prompt_file = Path(custom_path)
         if not prompt_file.exists():
             raise FileNotFoundError(f"Prompt file not found: {custom_path}")
         print(f"Using custom prompt from: {custom_path}")
-        return prompt_file.read_text(encoding='utf-8')
-    
-    if prompt_type:
+        base_prompt = prompt_file.read_text(encoding='utf-8')
+    elif prompt_type:
         prompt_file = Path(__file__).parent / "prompts" / f"{prompt_type}.txt"
         if prompt_file.exists():
             print(f"Using {prompt_type} prompt from: prompts/{prompt_type}.txt")
-            return prompt_file.read_text(encoding='utf-8')
+            base_prompt = prompt_file.read_text(encoding='utf-8')
         else:
             raise FileNotFoundError(f"Default prompt not found: prompts/{prompt_type}.txt")
+    else:
+        raise ValueError("Either prompt_type or custom_path must be specified")
     
-    raise ValueError("Either prompt_type or custom_path must be specified")
+    # Load and prepend rules if specified
+    if rules_path:
+        rules_text = load_rules(rules_path)
+        if rules_text:
+            return rules_text + base_prompt
+    
+    return base_prompt
 
 def initialize_gemini_client():
     """
